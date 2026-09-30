@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0">
+<title>Video to Image Sequence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Inter:wght@100..900&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* Layout: Experiment Tool ControlPanel — live preview on the left (flex 1), 241px control panel on the right; stacks below 768px. Light-only, as the kit is. */
+:root {
+  --surface: #ffffff;
+  --ink: #09090b;
+  --ink-muted: #00000098;
+  --input-bg: #f5f5f5;
+  --focus-border: #9d9d9d;
+  --border-subtle: #eeeeee;
+  --border-button: #e6e6e6;
+  --hover-fill: #fafafa;
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+  --control-fill: #23272e;
+  --control-fill-off: rgba(35, 39, 46, 0.6);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --divider-line: rgba(0, 0, 0, 0.1);
+  --tick-mark: rgba(134, 134, 134, 0.4);
+  --menu-bg: #000000;
+  --menu-text: #ffffff;
+  --menu-item-active: rgba(245, 245, 245, 0.18);
+  --shadow-menu: 0 2px 2px rgba(0, 0, 0, 0.15);
+  --shadow-thumb: 0 0 0 1px rgba(0, 0, 0, 0.1);
+
+  --field-padding-x: 16px;
+  --field-gap: 16px;
+  --row-gap: 8px;
+  --input-inset: 7px;
+  --menu-offset: 4px;
+  --menu-padding: 2px;
+  --radius-control: 5px;
+  --radius-menu: 8px;
+  --radius-app: 12px;
+  --panel-width: 241px;
+  --field-width: 240px;
+  --control-height: 24px;
+  --slider-track-width: 144px;
+  --slider-track-height: 16px;
+  --slider-thumb-size: 20px;
+
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --text-control: 500 11px/16px var(--font-sans);
+  --text-field-label: 500 9px/14px var(--font-sans);
+  --text-code: 500 9px/16px var(--font-mono);
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--surface); color: var(--ink); font: var(--text-control); letter-spacing: 0.055px; }
+.shell { height: 100%; padding: 8px 16px; }
+button { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-muted); }
+
+/* ---- ControlPanel ---- */
+.cp-app { display: flex; height: 100%; min-height: 480px; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-app); overflow: hidden; }
+.cp-preview-area { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.panel { width: var(--panel-width); flex-shrink: 0; height: 100%; overflow-y: auto; padding: var(--field-gap) 0; background: var(--surface); border-left: 1px solid var(--border-subtle); }
+@media (max-width: 768px) {
+  .shell { height: auto; }
+  .cp-app { flex-direction: column; height: auto; }
+  .cp-preview-area { flex: 0 0 auto; height: 60vh; min-height: 360px; }
+  .panel { width: 100%; height: auto; border-left: none; border-top: 1px solid var(--border-subtle); }
+  .panel .field, .panel .slider-field, .panel .panel-divider { width: 100%; }
+  .panel .panel-divider__line { width: 100%; }
+  .slider-field .slider-track-wrap, .slider-field .slider-track { width: 100%; flex: 1; }
+  .slider-field .slider-value-wrap { flex: 0 0 56px; }
+}
+
+/* ---- Fields ---- */
+.field { width: var(--field-width); padding: 0 var(--field-padding-x); margin-bottom: var(--field-gap); }
+.field-label { display: block; margin-bottom: var(--row-gap); font: var(--text-field-label); letter-spacing: 0.27px; color: var(--ink-muted); }
+.field-label::first-letter { text-transform: uppercase; }
+.row { display: flex; gap: var(--row-gap); align-items: center; }
+.row + .row { margin-top: var(--row-gap); }
+.input-wrap { flex: 1; min-width: 0; height: var(--control-height); display: flex; align-items: center; background: var(--input-bg); border: 1px solid transparent; border-radius: var(--radius-control); position: relative; }
+.input-wrap:focus-within { border-color: var(--focus-border); }
+.input-wrap.is-disabled { opacity: 0.5; }
+.input-icon { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); }
+.input-icon img { width: 12px; height: 12px; opacity: 0.5; display: block; }
+.input-wrap input { flex: 1; min-width: 0; height: 100%; border: none; background: transparent; padding: 0; font: var(--text-control); letter-spacing: 0.055px; color: var(--ink); outline: none; }
+.input-wrap > input:first-child { padding-left: var(--input-inset); }
+.suffix { flex-shrink: 0; padding: 0 var(--input-inset); color: var(--ink-muted); }
+.readout { flex: 1; min-width: 0; padding: 0 var(--input-inset); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Chevron + menu (DimensionControl / OptionSelector pattern) */
+.chevron { width: 21px; height: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: none; background: transparent; border-radius: var(--radius-control); cursor: pointer; }
+.chevron:hover { background: var(--hover-overlay); }
+.chevron:focus-visible { outline: 1px solid var(--focus-border); outline-offset: -1px; }
+.chevron img { width: 8px; height: 5px; opacity: 0.5; display: block; }
+.menu { display: none; position: absolute; top: calc(100% + var(--menu-offset)); left: -1px; right: -1px; z-index: 40; padding: var(--menu-padding); background: var(--menu-bg); border: 1px solid var(--hairline); border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); max-height: 172px; overflow-y: auto; flex-direction: column; }
+.menu.is-open { display: flex; }
+.input-wrap.is-menu-open { z-index: 30; }
+.menu button { flex-shrink: 0; width: 100%; height: var(--control-height); border: none; background: transparent; padding: 0 6px; font: var(--text-control); color: var(--menu-text); text-align: left; border-radius: var(--radius-control); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu button:hover, .menu button.is-active, .menu button:focus-visible { background: var(--menu-item-active); outline: none; }
+
+/* File upload row */
+.file-wrap { cursor: pointer; }
+.file-wrap:focus { outline: none; }
+.file-wrap:focus-visible, .file-wrap.is-dragover { border-color: var(--focus-border); }
+.file-name { flex: 1; min-width: 0; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+.file-wrap.is-filled .file-name { color: var(--ink); }
+.file-meta { flex-shrink: 0; padding: 0 var(--input-inset) 0 8px; color: var(--ink-muted); }
+.file-wrap:not(.is-filled) .file-meta { display: none; }
+
+/* Slider */
+.slider-field { width: var(--field-width); padding: 0 var(--field-padding-x); display: flex; flex-direction: column; gap: var(--row-gap); margin-bottom: var(--field-gap); }
+.slider-field__label { font: var(--text-field-label); letter-spacing: 0.27px; color: var(--ink-muted); }
+.slider-field__row { display: flex; align-items: center; gap: var(--row-gap); height: var(--control-height); }
+.slider-value-wrap { flex: 1; min-width: 0; height: var(--control-height); display: flex; align-items: center; background: var(--input-bg); border: 1px solid transparent; border-radius: var(--radius-control); padding: 0 var(--input-inset); }
+.slider-value-wrap:focus-within { border-color: var(--focus-border); }
+.slider-value-input { width: 100%; border: none; background: transparent; padding: 0; font: var(--text-control); color: var(--ink); outline: none; }
+.slider-track-wrap { width: var(--slider-track-width); flex-shrink: 0; }
+.slider-track { position: relative; width: 100%; height: var(--slider-track-height); background: var(--input-bg); border-radius: var(--radius-control); cursor: pointer; touch-action: none; }
+.slider-fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--control-fill); border-radius: var(--radius-control); pointer-events: none; }
+.slider-ticks { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; pointer-events: none; }
+.slider-ticks span { width: 3px; height: 3px; background: var(--tick-mark); }
+.slider-thumb { position: absolute; top: 50%; left: 0; width: var(--slider-thumb-size); height: var(--slider-thumb-size); margin: 0; padding: 0; border: 4px solid var(--surface); border-radius: 50%; background: var(--control-fill); box-shadow: var(--shadow-thumb); transform: translate(-50%, -50%); cursor: grab; touch-action: none; z-index: 2; }
+.slider-thumb:active { cursor: grabbing; }
+.slider-thumb:focus { outline: none; }
+.slider-thumb:focus-visible { box-shadow: 0 0 0 1px var(--control-fill); }
+.is-disabled .slider-track, .slider-track.is-disabled { opacity: 0.5; pointer-events: none; }
+
+/* Divider */
+.panel-divider { width: var(--field-width); padding: var(--menu-offset) var(--field-padding-x); margin-bottom: 12px; }
+.panel-divider__line { display: block; width: 208px; height: 1px; background: var(--divider-line); }
+
+/* Key/value readouts */
+.kv { display: grid; grid-template-columns: auto 1fr; row-gap: 0; }
+.kv dt, .kv dd { height: var(--control-height); display: flex; align-items: center; margin: 0; }
+.kv dt { color: var(--ink-muted); }
+.kv dd { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+
+/* Buttons */
+.btn { width: 100%; height: var(--control-height); border: 1px solid var(--border-button); border-radius: var(--radius-control); background: var(--surface); font: var(--text-control); color: var(--ink); cursor: pointer; }
+.btn:hover { background: var(--hover-fill); }
+.btn.is-primary { background: var(--control-fill); border-color: var(--control-fill); color: var(--menu-text); }
+.btn.is-primary:hover { background: var(--control-fill); opacity: 0.92; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:focus { outline: none; }
+.btn:focus-visible { outline: 1px solid var(--control-fill); outline-offset: 1px; }
+.btn + .btn { margin-top: var(--row-gap); }
+.progress { height: 4px; margin-top: var(--row-gap); background: var(--input-bg); border-radius: var(--radius-control); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--control-fill); }
+.status { margin-top: var(--row-gap); min-height: 16px; color: var(--ink-muted); overflow-wrap: anywhere; }
+.names { margin-top: var(--row-gap); color: var(--ink-muted); overflow-wrap: anywhere; }
+
+/* Snippet */
+.snippet-output { display: block; width: 100%; height: 140px; padding: 3px 6px; border: none; border-radius: var(--radius-control); background: var(--input-bg); resize: none; outline: none; font: var(--text-code); letter-spacing: 0.055px; color: var(--ink); white-space: pre; overflow: auto; }
+.snippet-output + .btn { margin-top: var(--row-gap); }
+
+/* ---- Preview area ---- */
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--row-gap); padding: 12px 16px; }
+.seg { display: flex; gap: 2px; }
+.seg button { height: var(--control-height); padding: 0 var(--input-inset); border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; cursor: pointer; color: var(--ink-muted); }
+.seg button:hover { background: var(--hover-overlay); }
+.seg button[aria-pressed="true"] { background: var(--input-bg); color: var(--ink); }
+.seg button:disabled { opacity: 0.4; cursor: default; background: transparent; }
+.seg button:focus { outline: none; }
+.seg button:focus-visible { border-color: var(--focus-border); }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; }
+.stage video, .stage > img { max-width: 100%; max-height: 100%; display: block; border-radius: var(--radius-control); }
+.foot { display: flex; align-items: center; gap: 12px; }
+.foot .slider-track-wrap { flex: 1; width: auto; margin: 0 10px; }
+.tc { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* Empty drop target (ImageUpload pattern, scaled up) */
+.drop { width: min(360px, 100%); height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--row-gap); background: var(--input-bg); border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; color: var(--ink-muted); text-align: center; padding: 16px; }
+.drop img { width: 12px; height: 12px; opacity: 0.5; }
+.drop:focus { outline: none; }
+.drop:focus-visible, .drop.is-dragover { border-color: var(--focus-border); background: var(--hover-overlay); }
+
+/* Compare */
+.cmpbox { flex: 1; min-height: 0; overflow: auto; border-radius: var(--radius-control); background: var(--input-bg); display: flex; }
+.cmpinner { position: relative; margin: auto; flex-shrink: 0; cursor: ew-resize; user-select: none; touch-action: pan-y; }
+.cmpinner canvas, .cmpinner img { display: block; width: 100%; height: 100%; }
+.cmpbox.is-zoomed .cmpinner canvas, .cmpbox.is-zoomed .cmpinner img { image-rendering: pixelated; }
+.cmpinner img { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
+.wipe-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--surface); box-shadow: 0 0 0 1px var(--divider-line); pointer-events: none; }
+.wipe-line::after { content: ""; position: absolute; top: 50%; left: 50%; width: var(--slider-thumb-size); height: var(--slider-thumb-size); transform: translate(-50%, -50%); border: 4px solid var(--surface); border-radius: 50%; background: var(--control-fill); box-shadow: var(--shadow-thumb); }
+.tag { position: absolute; top: 8px; padding: 4px 8px; border-radius: var(--radius-control); background: var(--menu-bg); color: var(--menu-text); pointer-events: none; }
+.tag.left { left: 8px; } .tag.right { right: 8px; }
+.cmpwrap { flex: 1; min-height: 0; position: relative; display: flex; }
+.levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--row-gap); }
+.level { display: flex; flex-direction: column; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; text-align: left; min-width: 0; }
+.level .crop { height: 72px; border-radius: var(--radius-control); overflow: hidden; background: var(--input-bg); box-shadow: inset 0 0 0 1px var(--hairline); }
+.level .crop img { width: 100%; height: 100%; object-fit: none; display: block; }
+.level[aria-pressed="true"] .crop { box-shadow: 0 0 0 1px var(--control-fill); }
+.level .meta { display: flex; justify-content: space-between; gap: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.level .meta span:last-child { color: var(--ink-muted); }
+.level:focus { outline: none; }
+.level:focus-visible .crop { box-shadow: 0 0 0 1px var(--focus-border); }
+
+/* Sequence */
+.strip { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+.strip button { flex: 0 0 56px; height: 32px; padding: 0; border: none; border-radius: 4px; background: var(--input-bg); overflow: hidden; cursor: pointer; box-shadow: inset 0 0 0 1px var(--hairline); }
+.strip button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.strip button[aria-current="true"] { box-shadow: 0 0 0 1px var(--control-fill); }
+.play { width: auto; padding: 0 12px; flex-shrink: 0; }
+.empty-note { color: var(--ink-muted); }
+@media (max-width: 560px) { .levels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+
+<div class="shell">
+<div class="cp-app">
+  <main class="cp-preview-area" id="previewArea">
+    <div class="bar">
+      <div class="seg" id="viewSeg" role="group" aria-label="Tampilan">
+        <button data-view="video" aria-pressed="true">Video</button>
+        <button data-view="compare" disabled>Bandingkan</button>
+        <button data-view="seq" disabled>Hasil</button>
+      </div>
+      <div class="seg" id="zoomSeg" role="group" aria-label="Zoom" hidden>
+        <button data-z="0" aria-pressed="true">Fit</button>
+        <button data-z="1">100%</button>
+        <button data-z="2">200%</button>
+      </div>
+      <span class="muted num" id="barMeta"></span>
+    </div>
+
+    <!-- Video -->
+    <section class="view" id="view-video">
+      <div class="stage">
+        <div class="drop" id="drop" role="button" tabindex="0" aria-label="Pilih video">
+          <img alt="" id="dropIcon">
+          <span>Taruh video atau klik</span>
+          <span>MP4, WebM, MOV</span>
+        </div>
+        <video id="video" playsinline muted preload="auto" hidden></video>
+      </div>
+      <div class="foot" id="videoFoot" hidden>
+        <span class="tc" id="tcNow">00:00:00:00</span>
+        <div class="slider-track-wrap"><div class="slider-track" id="scrub"><div class="slider-fill"></div><button type="button" class="slider-thumb" aria-label="Posisi preview"></button></div></div>
+        <span class="tc muted" id="tcDur">00:00:00:00</span>
+      </div>
+    </section>
+
+    <!-- Compare -->
+    <section class="view" id="view-compare" hidden>
+      <div class="cmpwrap">
+        <div class="cmpbox" id="cmpBox">
+          <div class="cmpinner" id="cmpInner">
+            <canvas id="cmpOrig"></canvas>
+            <img id="cmpComp" alt="Frame setelah kompresi WebP">
+            <div class="wipe-line" id="wipeLine"></div>
+          </div>
+        </div>
+        <span class="tag left">Asli</span>
+        <span class="tag right num" id="tagRight">WebP 0.75</span>
+      </div>
+      <div class="levels" id="levels"></div>
+    </section>
+
+    <!-- Sequence -->
+    <section class="view" id="view-seq" hidden>
+      <div class="stage" id="seqStage"><span class="empty-note">Belum ada hasil</span></div>
+      <div class="foot">
+        <button class="btn play" id="playBtn" disabled>Putar</button>
+        <div class="slider-track-wrap"><div class="slider-track" id="seqScrub"><div class="slider-fill"></div><button type="button" class="slider-thumb" aria-label="Frame hasil"></button></div></div>
+        <span class="tc muted" id="seqName">—</span>
+      </div>
+      <div class="strip" id="strip"></div>
+    </section>
+  </main>
+
+  <aside class="panel">
+    <div class="field">
+      <span class="field-label">Video</span>
+      <div class="row">
+        <div class="input-wrap file-wrap" id="fileWrap" role="button" tabindex="0" aria-label="Pilih video">
+          <span class="input-icon"><img alt="" id="fileIcon"></span>
+          <span class="file-name" id="fileName">Choose file</span>
+          <span class="file-meta num" id="fileMeta"></span>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="video/*" hidden>
+    </div>
+    <div class="field">
+      <span class="field-label">Info</span>
+      <dl class="kv">
+        <dt>Resolusi</dt><dd id="infoRes">—</dd>
+        <dt>Fps asli</dt><dd id="infoFps">—</dd>
+        <dt>Durasi</dt><dd id="infoDur">—</dd>
+      </dl>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="slider-field" id="compField">
+      <span class="slider-field__label">Kompresi</span>
+      <div class="slider-field__row">
+        <div class="slider-value-wrap"><input type="text" class="slider-value-input" id="compInput" value="25" inputmode="numeric" aria-label="Kompresi"></div>
+        <div class="slider-track-wrap"><div class="slider-track" id="compTrack"><div class="slider-fill"></div><div class="slider-ticks" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div><button type="button" class="slider-thumb" aria-label="Kompresi"></button></div></div>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Preset</span>
+      <div class="row">
+        <div class="input-wrap" id="presetWrap">
+          <span class="readout" id="presetLabel">Seimbang</span>
+          <span class="suffix num" id="qualityLabel">q 0.75</span>
+          <button type="button" class="chevron" aria-label="Pilih preset" aria-haspopup="listbox"><img alt="" data-icon="chevron"></button>
+          <div class="menu" role="listbox"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="field">
+      <span class="field-label">Frame rate</span>
+      <div class="row">
+        <div class="input-wrap" id="fpsWrap">
+          <input type="text" id="fps" value="30" inputmode="decimal" aria-label="Frame rate">
+          <span class="suffix">fps</span>
+          <button type="button" class="chevron" aria-label="Pilih frame rate" aria-haspopup="listbox"><img alt="" data-icon="chevron"></button>
+          <div class="menu" role="listbox"></div>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Ukuran</span>
+      <div class="row">
+        <div class="input-wrap" id="widthWrap">
+          <span class="input-icon">W</span>
+          <input type="text" id="width" value="1280" inputmode="numeric" aria-label="Lebar output">
+          <button type="button" class="chevron" aria-label="Pilih lebar" aria-haspopup="listbox"><img alt="" data-icon="chevron"></button>
+          <div class="menu" role="listbox"></div>
+        </div>
+        <div class="input-wrap is-disabled" style="flex: 0 0 72px">
+          <span class="input-icon">H</span>
+          <span class="readout num" id="heightOut">—</span>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Rentang</span>
+      <div class="row">
+        <div class="input-wrap"><span class="input-icon">In</span><input type="text" id="start" value="0" inputmode="decimal" aria-label="Mulai (detik)"><span class="suffix">s</span></div>
+        <div class="input-wrap"><span class="input-icon">Out</span><input type="text" id="end" value="0" inputmode="decimal" aria-label="Selesai (detik)"><span class="suffix">s</span></div>
+      </div>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="field">
+      <span class="field-label">Nama file</span>
+      <div class="row">
+        <div class="input-wrap"><input type="text" id="prefix" value="frame" spellcheck="false" aria-label="Prefix"></div>
+        <div class="input-wrap" style="flex: 0 0 72px"><span class="input-icon">#</span><input type="text" id="startNum" value="1" inputmode="numeric" aria-label="Nomor awal"></div>
+      </div>
+      <div class="names num" id="namePreview">frame_0001.webp</div>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="field">
+      <span class="field-label">Estimasi</span>
+      <dl class="kv">
+        <dt>Per frame</dt><dd id="estSize">—</dd>
+        <dt>Asli (PNG)</dt><dd id="cOrig">—</dd>
+        <dt>Hemat</dt><dd id="cSave">—</dd>
+        <dt>Jumlah frame</dt><dd id="estCount">—</dd>
+        <dt>Total</dt><dd id="estTotal">—</dd>
+      </dl>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="field">
+      <span class="field-label">Ekspor</span>
+      <button class="btn is-primary" id="runBtn" disabled>Ekstrak frame</button>
+      <button class="btn" id="cancelBtn" hidden>Batal</button>
+      <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+      <div class="status" id="status" role="status">Pilih video dulu</div>
+      <button class="btn" id="zipBtn" disabled style="margin-top: 8px">Download ZIP</button>
+    </div>
+
+    <div class="panel-divider"><span class="panel-divider__line" role="separator"></span></div>
+
+    <div class="field" style="margin-bottom: 0">
+      <span class="field-label">Kode</span>
+      <textarea class="snippet-output" id="snippet" readonly spellcheck="false" aria-label="Snippet scroll sequence"></textarea>
+      <button class="btn" id="copyBtn">Salin kode</button>
+    </div>
+  </aside>
+</div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  // Kit-style single-ink icons (#09090B, shown at 50%).
+  const svg = (w, h, body) => "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none" stroke="#09090B" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`);
+  const ICONS = {
+    chevron: svg(8, 5, '<path d="M1 1l3 3 3-3"/>'),
+    upload: svg(12, 12, '<path d="M6 8V1.5M3.5 4L6 1.5 8.5 4M1.5 8.5v2h9v-2"/>'),
+    file: svg(12, 12, '<rect x="1.5" y="2.5" width="9" height="7" rx="1"/><path d="M5 4.5v3l2.5-1.5z" fill="#09090B"/>'),
+  };
+  document.querySelectorAll("img[data-icon]").forEach((i) => i.src = ICONS[i.dataset.icon]);
+  $("dropIcon").src = ICONS.upload; $("fileIcon").src = ICONS.file;
+
+  const video = $("video"), fileInput = $("fileInput");
+  const procVideo = document.createElement("video");
+  procVideo.muted = true; procVideo.playsInline = true; procVideo.preload = "auto";
+
+  const PRESETS = [
+    { label: "Hampir lossless", v: 5 }, { label: "Seimbang", v: 25 }, { label: "Kuat", v: 50 }, { label: "Ekstrem", v: 75 },
+  ];
+  const st = {
+    file: null, url: null, duration: 0, vw: 0, vh: 0, srcFps: null,
+    comp: 25, fps: 30, width: 1280, start: 0, end: 0, prefix: "frame", startNum: 1,
+    running: false, cancel: false, frames: [], zipBlob: null, estBytes: null, playing: null, seqIdx: 0, view: "video",
+  };
+
+  const dlPromise = (window.claude && window.claude.use) ? window.claude.use("downloads").catch(() => null) : Promise.resolve(null);
+
+  const quality = () => Math.max(0, Math.min(1, 1 - st.comp / 100));
+  const fmtBytes = (b) => b == null ? "—" : b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(1) + " KB" : (b / 1048576).toFixed(2) + " MB";
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const tc = (sec, fps) => {
+    fps = Math.round(fps || 30);
+    const total = Math.floor(sec * fps + 1e-6);
+    const f = total % fps, s = Math.floor(total / fps);
+    return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}:${pad2(f)}`;
+  };
+  const frameCount = () => Math.max(0, Math.floor((st.end - st.start) * st.fps + 1e-6));
+  const padLen = () => Math.max(4, String(st.startNum + frameCount()).length);
+  const nameFor = (i, pl = padLen()) => `${st.prefix || "frame"}_${String(st.startNum + i).padStart(pl, "0")}.webp`;
+  const outSize = () => {
+    if (!st.vw) return [0, 0];
+    const w = st.width && st.width < st.vw ? st.width : st.vw;
+    return [w, Math.round(st.vh * w / st.vw / 2) * 2];
+  };
+  const toBlob = (canvas, q, type = "image/webp") => new Promise((res) => canvas.toBlob(res, type, q));
+  function setStatus(s) { $("status").textContent = s; }
+
+  // ---------- Kit components ----------
+  function makeSlider(track, { min = 0, max = 100, step = 1, value = 0, input = null, onInput }) {
+    const fill = track.querySelector(".slider-fill"), thumb = track.querySelector(".slider-thumb");
+    let v = value, disabled = false;
+    const clamp = (x) => Math.min(max, Math.max(min, Math.round(x / step) * step));
+    const paint = () => {
+      const p = max > min ? (v - min) / (max - min) : 0;
+      fill.style.width = `calc(${p * 100}% )`;
+      thumb.style.left = `${p * 100}%`;
+      thumb.setAttribute("aria-valuenow", v);
+      if (input && document.activeElement !== input) input.value = +v.toFixed(3);
+    };
+    const set = (x, emit) => { const n = clamp(x); if (n === v && !emit) return paint(); v = n; paint(); if (emit && onInput) onInput(v); };
+    const fromEvent = (e) => { const r = track.getBoundingClientRect(); return min + (e.clientX - r.left) / r.width * (max - min); };
+    let drag = false;
+    track.addEventListener("pointerdown", (e) => { if (disabled) return; drag = true; track.setPointerCapture(e.pointerId); set(fromEvent(e), true); thumb.focus({ preventScroll: true }); });
+    track.addEventListener("pointermove", (e) => { if (drag) set(fromEvent(e), true); });
+    track.addEventListener("pointerup", () => drag = false);
+    track.addEventListener("pointercancel", () => drag = false);
+    thumb.setAttribute("role", "slider");
+    thumb.addEventListener("keydown", (e) => {
+      if (disabled) return;
+      const k = e.shiftKey ? 8 : 1;
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); set(v + step * k, true); }
+      else if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); set(v - step * k, true); }
+      else if (e.key === "Home") { e.preventDefault(); set(min, true); }
+      else if (e.key === "End") { e.preventDefault(); set(max, true); }
+    });
+    if (input) {
+      input.addEventListener("focus", () => input.select());
+      input.addEventListener("change", () => set(parseFloat(input.value) || 0, true));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); set(v + (e.key === "ArrowUp" ? 1 : -1) * step * (e.shiftKey ? 8 : 1), true); input.value = v; }
+        if (e.key === "Enter") input.blur();
+      });
+    }
+    paint();
+    return {
+      get: () => v, set: (x) => set(x, false),
+      setMax: (m) => { max = m; set(v, false); },
+      disable: (b) => { disabled = b; track.classList.toggle("is-disabled", b); if (input) input.disabled = b; },
+    };
+  }
+
+  const menus = [];
+  function makeMenu(wrap, getItems, onPick) {
+    const btn = wrap.querySelector(".chevron"), menu = wrap.querySelector(".menu");
+    const close = () => { menu.classList.remove("is-open"); wrap.classList.remove("is-menu-open"); btn.setAttribute("aria-expanded", "false"); };
+    const open = () => {
+      menus.forEach((m) => m !== api && m.close());
+      menu.innerHTML = "";
+      getItems().forEach((it) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.textContent = it.label; b.setAttribute("role", "option");
+        if (it.active) b.classList.add("is-active");
+        b.addEventListener("click", (e) => { e.stopPropagation(); close(); onPick(it); });
+        menu.appendChild(b);
+      });
+      menu.classList.add("is-open"); wrap.classList.add("is-menu-open"); btn.setAttribute("aria-expanded", "true");
+      (menu.querySelector(".is-active") || menu.firstChild)?.focus();
+    };
+    btn.addEventListener("click", (e) => { e.stopPropagation(); menu.classList.contains("is-open") ? close() : open(); });
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { close(); btn.focus(); }
+      if (menu.classList.contains("is-open") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        const items = [...menu.children], i = items.indexOf(document.activeElement);
+        items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+      }
+    });
+    const api = { close, setDisabled: (b) => { btn.disabled = b; wrap.classList.toggle("is-disabled", b); } };
+    menus.push(api);
+    return api;
+  }
+  document.addEventListener("click", () => menus.forEach((m) => m.close()));
+
+  const bindText = (el, onCommit) => {
+    el.addEventListener("focus", () => el.select());
+    el.addEventListener("change", onCommit);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") el.blur(); });
+  };
+
+  // ---------- Encoder support (Safari returns PNG) ----------
+  let webpOK = false;
+  (async () => {
+    const c = document.createElement("canvas"); c.width = c.height = 2;
+    const b = await toBlob(c, 0.8);
+    webpOK = !!b && b.type === "image/webp";
+    if (!webpOK) setStatus("Browser ini tidak bisa encode WebP. Pakai Chrome, Edge, atau Firefox.");
+    refreshRun();
+  })();
+
+  function refreshRun() { $("runBtn").disabled = !st.file || !webpOK || st.running || frameCount() < 1; }
+
+  // ---------- Views ----------
+  function setView(v) {
+    st.view = v;
+    ["video", "compare", "seq"].forEach((k) => $("view-" + k).hidden = k !== v);
+    document.querySelectorAll("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+    $("zoomSeg").hidden = v !== "compare";
+    if (v !== "seq") stopPlayback();
+    if (v === "compare") requestAnimationFrame(layoutCompare);
+    updateBarMeta();
+  }
+  $("viewSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !b.disabled) setView(b.dataset.view); });
+  function updateBarMeta() {
+    const [w, h] = outSize();
+    $("barMeta").textContent = !st.file ? "" :
+      st.view === "compare" ? `${w}×${h}` :
+      st.view === "seq" ? (st.frames.length ? `${st.frames.length} frame` : "") :
+      `${st.vw}×${st.vh}`;
+  }
+
+  // ---------- Controls ----------
+  const compSlider = makeSlider($("compTrack"), { min: 0, max: 100, step: 1, value: 25, input: $("compInput"), onInput: (v) => setComp(v) });
+  function setComp(v) {
+    st.comp = Math.max(0, Math.min(100, Math.round(+v)));
+    compSlider.set(st.comp);
+    const p = PRESETS.find((x) => x.v === st.comp);
+    $("presetLabel").textContent = p ? p.label : "Custom";
+    $("qualityLabel").textContent = `q ${quality().toFixed(2)}`;
+    $("tagRight").textContent = `WebP ${quality().toFixed(2)}`;
+    document.querySelectorAll("#levels .level").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === st.comp)));
+    schedulePreview();
+  }
+  const presetMenu = makeMenu($("presetWrap"), () => PRESETS.map((p) => ({ label: `${p.label} · ${p.v}`, v: p.v, active: p.v === st.comp })), (it) => setComp(it.v));
+
+  function setFps(v) {
+    const n = Math.max(1, Math.min(120, +v || 30));
+    st.fps = n;
+    $("fps").value = +n.toFixed(3);
+    $("tcDur").textContent = tc(st.duration, st.fps);
+    updateNames();
+  }
+  bindText($("fps"), (e) => setFps(parseFloat(e.target.value)));
+  const fpsMenu = makeMenu($("fpsWrap"), () => {
+    const list = [12, 15, 24, 30, 60].map((f) => ({ label: String(f), v: f, active: Math.abs(f - st.fps) < 0.01 }));
+    if (st.srcFps) list.push({ label: `Asli (${+st.srcFps.toFixed(3)})`, v: st.srcFps, active: Math.abs(st.srcFps - st.fps) < 0.01 });
+    return list;
+  }, (it) => setFps(it.v));
+
+  function setWidth(v) {
+    st.width = Math.max(0, Math.round(+v || 0));
+    $("width").value = st.width && (!st.vw || st.width < st.vw) ? st.width : (st.vw || "Asli");
+    const [, h] = outSize();
+    $("heightOut").textContent = h || "—";
+    schedulePreview(); updateSnippet(); updateBarMeta();
+  }
+  bindText($("width"), (e) => setWidth(parseFloat(e.target.value) || 0));
+  const widthMenu = makeMenu($("widthWrap"), () => [
+    { label: st.vw ? `Asli (${st.vw})` : "Asli", v: 0, active: !st.width || st.width >= st.vw },
+    ...[1920, 1280, 960, 720, 480].filter((w) => !st.vw || w < st.vw).map((w) => ({ label: String(w), v: w, active: st.width === w })),
+  ], (it) => setWidth(it.v));
+
+  bindText($("start"), (e) => {
+    st.start = Math.max(0, Math.min(parseFloat(e.target.value) || 0, st.duration)); e.target.value = +st.start.toFixed(3);
+    if (st.end < st.start) { st.end = st.start; $("end").value = +st.end.toFixed(3); }
+    updateNames();
+  });
+  bindText($("end"), (e) => {
+    st.end = Math.max(st.start, Math.min(parseFloat(e.target.value) || 0, st.duration)); e.target.value = +st.end.toFixed(3);
+    updateNames();
+  });
+  $("prefix").addEventListener("focus", (e) => e.target.select());
+  $("prefix").addEventListener("input", (e) => { st.prefix = e.target.value.replace(/[^\w\-]+/g, "-"); updateNames(); });
+  bindText($("startNum"), (e) => { st.startNum = Math.max(0, Math.floor(+e.target.value || 0)); e.target.value = st.startNum; updateNames(); });
+
+  function updateNames() {
+    const n = frameCount();
+    $("namePreview").textContent = n > 1 ? `${nameFor(0)} … ${nameFor(n - 1)}` : nameFor(0);
+    $("estCount").textContent = st.file ? n.toLocaleString("id-ID") : "—";
+    $("estTotal").textContent = st.estBytes != null && n ? fmtBytes(st.estBytes * n) : "—";
+    updateSnippet(); refreshRun();
+  }
+
+  function updateSnippet() {
+    const n = st.frames.length || frameCount() || 150;
+    const [w, h] = st.vw ? outSize() : [1280, 720];
+    const pl = st.frames.length ? st.framePad : padLen();
+    $("snippet").value =
+`const FRAMES = ${n};
+const src = (i) => \`/sequence/${st.prefix || "frame"}_\${String(i + ${st.startNum}).padStart(${pl}, "0")}.webp\`;
+
+const canvas = document.querySelector("#seq");
+canvas.width = ${w}; canvas.height = ${h};
+const ctx = canvas.getContext("2d");
+const imgs = Array.from({ length: FRAMES }, (_, i) => {
+  const img = new Image(); img.src = src(i); return img;
+});
+imgs[0].onload = () => ctx.drawImage(imgs[0], 0, 0);
+
+addEventListener("scroll", () => {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  const i = Math.min(FRAMES - 1, Math.floor(scrollY / max * FRAMES));
+  requestAnimationFrame(() => ctx.drawImage(imgs[i], 0, 0));
+});`;
+  }
+
+  // ---------- Loading ----------
+  const pick = () => { if (!st.running) fileInput.click(); };
+  [$("drop"), $("fileWrap")].forEach((el) => {
+    el.addEventListener("click", pick);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+  const dropTargets = () => [$("drop"), $("fileWrap")];
+  let dragDepth = 0;
+  document.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; dropTargets().forEach((t) => t.classList.add("is-dragover")); });
+  document.addEventListener("dragover", (e) => e.preventDefault());
+  document.addEventListener("dragleave", (e) => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; dropTargets().forEach((t) => t.classList.remove("is-dragover")); } });
+  document.addEventListener("drop", (e) => {
+    e.preventDefault(); dragDepth = 0; dropTargets().forEach((t) => t.classList.remove("is-dragover"));
+    const f = e.dataTransfer?.files?.[0]; if (f) loadFile(f);
+  });
+  fileInput.addEventListener("change", () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); fileInput.value = ""; });
+
+  function loadFile(file) {
+    if (st.running) return;
+    if (!file.type.startsWith("video/") && !/\.(mp4|webm|mov|m4v|mkv|ogv)$/i.test(file.name)) {
+      setStatus(`${file.name} bukan video. Pilih MP4, WebM, atau MOV.`); return;
+    }
+    if (st.url) URL.revokeObjectURL(st.url);
+    st.file = file; st.url = URL.createObjectURL(file); st.srcFps = null;
+    video.src = st.url; procVideo.src = st.url;
+    $("fileName").textContent = file.name; $("fileMeta").textContent = fmtBytes(file.size);
+    $("fileWrap").classList.add("is-filled");
+    setView("video");
+    setStatus("Memuat video");
+  }
+
+  video.addEventListener("error", () => {
+    setStatus("Codec video ini tidak terbaca browser. Export ulang ke MP4 (H.264) atau WebM.");
+    video.hidden = true; $("drop").hidden = false; $("videoFoot").hidden = true; st.file = null;
+    $("fileWrap").classList.remove("is-filled"); $("fileName").textContent = "Choose file";
+    refreshRun();
+  });
+
+  video.addEventListener("loadedmetadata", async () => {
+    st.duration = video.duration; st.vw = video.videoWidth; st.vh = video.videoHeight;
+    st.start = 0; st.end = +st.duration.toFixed(3);
+    $("start").value = 0; $("end").value = st.end;
+    video.hidden = false; $("drop").hidden = true; $("videoFoot").hidden = false;
+    scrubSlider.set(0);
+    document.querySelectorAll("#viewSeg button[data-view=compare]").forEach((b) => b.disabled = false);
+    $("infoRes").textContent = `${st.vw}×${st.vh}`;
+    $("infoDur").textContent = `${st.duration.toFixed(2)} s`;
+    $("infoFps").textContent = "…";
+    setWidth(st.width);
+    setFps(st.fps);
+    setStatus("Mendeteksi fps asli");
+    const fps = await detectFps();
+    if (fps) { st.srcFps = fps; $("infoFps").textContent = String(+fps.toFixed(3)); setFps(fps); }
+    else $("infoFps").textContent = "Tidak terdeteksi";
+    await seek(video, 0);
+    setStatus(`Siap · ${frameCount()} frame`);
+    schedulePreview();
+  });
+
+  function detectFps() {
+    if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const times = []; let done = false;
+      const finish = () => {
+        if (done) return; done = true; video.pause();
+        const d = [];
+        for (let i = 1; i < times.length; i++) { const x = times[i] - times[i - 1]; if (x > 0.001) d.push(x); }
+        if (d.length < 4) return resolve(null);
+        d.sort((a, b) => a - b);
+        const fps = 1 / d[Math.floor(d.length * 0.25)];
+        const snap = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120].find((c) => Math.abs(c - fps) / c < 0.02);
+        resolve(snap || Math.round(fps));
+      };
+      const cb = (_, meta) => { times.push(meta.mediaTime); if (times.length >= 14) finish(); else video.requestVideoFrameCallback(cb); };
+      video.requestVideoFrameCallback(cb);
+      video.play().catch(() => finish());
+      setTimeout(finish, 2500);
+    });
+  }
+
+  function seek(v, t) {
+    return new Promise((res) => {
+      const done = () => { v.removeEventListener("seeked", done); res(); };
+      v.addEventListener("seeked", done);
+      v.currentTime = t;
+    });
+  }
+
+  const scrubSlider = makeSlider($("scrub"), { min: 0, max: 1000, step: 1, value: 0, onInput: (v) => {
+    const t = v / 1000 * st.duration;
+    video.currentTime = t;
+    $("tcNow").textContent = tc(t, st.fps);
+  } });
+  video.addEventListener("seeked", () => { $("tcNow").textContent = tc(video.currentTime, st.fps); if (!st.running) schedulePreview(); });
+
+  // ---------- Live estimate + compare ----------
+  const pCanvas = document.createElement("canvas");
+  let pTimer = null, pUrl = null;
+  function schedulePreview() { clearTimeout(pTimer); pTimer = setTimeout(renderPreview, 160); }
+  async function renderPreview() {
+    if (!st.file || !video.videoWidth || !webpOK) return;
+    const [w, h] = outSize();
+    pCanvas.width = w; pCanvas.height = h;
+    pCanvas.getContext("2d").drawImage(video, 0, 0, w, h);
+    const b = await toBlob(pCanvas, quality());
+    if (!b) return;
+    st.estBytes = b.size;
+    if (pUrl) URL.revokeObjectURL(pUrl);
+    pUrl = URL.createObjectURL(b);
+    $("estSize").textContent = fmtBytes(b.size);
+    updateNames();
+    await renderCompare(w, h, b.size);
+  }
+
+  const LEVELS = [5, 25, 50, 75];
+  const cmp = { key: "", pngSize: null, levelUrls: [], zoom: 0, wipe: 50 };
+
+  async function renderCompare(w, h, webpSize) {
+    const oc = $("cmpOrig");
+    oc.width = w; oc.height = h;
+    oc.getContext("2d").drawImage(pCanvas, 0, 0);
+    $("cmpComp").src = pUrl;
+    layoutCompare();
+
+    const key = `${video.currentTime.toFixed(3)}|${w}`;
+    if (key !== cmp.key) {
+      cmp.key = key;
+      const png = await toBlob(pCanvas, undefined, "image/png");
+      cmp.pngSize = png ? png.size : null;
+      cmp.levelUrls.forEach((u) => URL.revokeObjectURL(u));
+      cmp.levelUrls = [];
+      const box = $("levels"); box.innerHTML = "";
+      for (const lv of LEVELS) {
+        const b = await toBlob(pCanvas, 1 - lv / 100);
+        const u = URL.createObjectURL(b); cmp.levelUrls.push(u);
+        const btn = document.createElement("button");
+        btn.className = "level"; btn.dataset.v = lv; btn.type = "button";
+        btn.innerHTML = `<div class="crop"><img alt="Crop 1:1 kompresi ${lv}" src="${u}"></div><div class="meta"><span>${PRESETS.find((p) => p.v === lv).label}</span><span>${fmtBytes(b.size)}</span></div>`;
+        box.appendChild(btn);
+      }
+    }
+    document.querySelectorAll("#levels .level").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === st.comp)));
+    $("cOrig").textContent = fmtBytes(cmp.pngSize);
+    $("cSave").textContent = cmp.pngSize ? `${Math.max(0, 100 - webpSize / cmp.pngSize * 100).toFixed(1)}%` : "—";
+    updateBarMeta();
+  }
+  $("levels").addEventListener("click", (e) => { const b = e.target.closest(".level"); if (b && !st.running) setComp(b.dataset.v); });
+
+  function layoutCompare() {
+    const box = $("cmpBox"), inner = $("cmpInner"), oc = $("cmpOrig");
+    if (!oc.width || $("view-compare").hidden) return;
+    box.classList.toggle("is-zoomed", cmp.zoom > 0);
+    let w, h;
+    if (cmp.zoom === 0) {
+      const s = Math.min(box.clientWidth / oc.width, box.clientHeight / oc.height);
+      w = oc.width * s; h = oc.height * s;
+    } else {
+      w = oc.width * cmp.zoom / devicePixelRatio; h = oc.height * cmp.zoom / devicePixelRatio;
+    }
+    inner.style.width = w + "px"; inner.style.height = h + "px";
+  }
+  new ResizeObserver(layoutCompare).observe($("cmpBox"));
+  $("zoomSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    cmp.zoom = +b.dataset.z;
+    document.querySelectorAll("#zoomSeg button").forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
+    layoutCompare();
+    const box = $("cmpBox"), inner = $("cmpInner");
+    requestAnimationFrame(() => {
+      box.scrollLeft = inner.offsetWidth * cmp.wipe / 100 - box.clientWidth / 2;
+      box.scrollTop = (inner.offsetHeight - box.clientHeight) / 2;
+    });
+  });
+  function setWipe(p) {
+    cmp.wipe = Math.max(0, Math.min(100, p));
+    $("cmpComp").style.clipPath = `inset(0 0 0 ${cmp.wipe}%)`;
+    $("wipeLine").style.left = cmp.wipe + "%";
+  }
+  let wiping = false;
+  const wipeFromEvent = (e) => { const r = $("cmpInner").getBoundingClientRect(); setWipe((e.clientX - r.left) / r.width * 100); };
+  $("cmpInner").addEventListener("pointerdown", (e) => { wiping = true; e.currentTarget.setPointerCapture(e.pointerId); wipeFromEvent(e); });
+  $("cmpInner").addEventListener("pointermove", (e) => { if (wiping) wipeFromEvent(e); });
+  $("cmpInner").addEventListener("pointerup", () => wiping = false);
+  $("cmpInner").addEventListener("pointercancel", () => wiping = false);
+  $("cmpInner").tabIndex = 0;
+  $("cmpInner").setAttribute("aria-label", "Garis pembanding, geser dengan panah kiri/kanan");
+  $("cmpInner").addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); setWipe(cmp.wipe - (e.shiftKey ? 10 : 2)); }
+    if (e.key === "ArrowRight") { e.preventDefault(); setWipe(cmp.wipe + (e.shiftKey ? 10 : 2)); }
+  });
+
+  // ---------- Extraction ----------
+  $("runBtn").addEventListener("click", run);
+  $("cancelBtn").addEventListener("click", () => { st.cancel = true; });
+
+  async function run() {
+    const n = frameCount();
+    if (!n || st.running) return;
+    st.running = true; st.cancel = false;
+    stopPlayback();
+    st.frames.forEach((f) => URL.revokeObjectURL(f.url));
+    st.frames = []; st.zipBlob = null;
+    st.framePad = padLen();
+    $("zipBtn").disabled = true; $("cancelBtn").hidden = false; $("runBtn").hidden = true;
+    lockInputs(true); refreshRun();
+    document.querySelector("#viewSeg button[data-view=seq]").disabled = false;
+    setView("seq");
+
+    const [w, h] = outSize();
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    const q = quality();
+    const t0 = performance.now();
+    if (procVideo.readyState < 1) await new Promise((r) => procVideo.addEventListener("loadedmetadata", r, { once: true }));
+
+    for (let i = 0; i < n; i++) {
+      if (st.cancel) break;
+      const t = Math.min(st.start + (i + 0.5) / st.fps, st.duration - 0.001);
+      await seek(procVideo, t);
+      ctx.drawImage(procVideo, 0, 0, w, h);
+      const blob = await toBlob(c, q);
+      st.frames.push({ name: nameFor(i, st.framePad), blob, url: URL.createObjectURL(blob), size: blob.size });
+      $("bar").style.width = ((i + 1) / n * 100).toFixed(2) + "%";
+      const el = (performance.now() - t0) / 1000;
+      setStatus(`Frame ${i + 1}/${n}` + (i > 2 ? ` · sisa ±${Math.ceil(el / (i + 1) * (n - i - 1))} s` : ""));
+      if (i % 6 === 0) showSeq(i);
+    }
+
+    const secs = (performance.now() - t0) / 1000;
+    const got = st.frames.length;
+    st.running = false; $("cancelBtn").hidden = true; $("runBtn").hidden = false; lockInputs(false); refreshRun();
+    if (!got) { setStatus("Dibatalkan"); $("bar").style.width = "0"; return; }
+    const total = st.frames.reduce((a, f) => a + f.size, 0);
+    setStatus(`${st.cancel ? "Dibatalkan di" : "Selesai ·"} ${got} frame · ${fmtBytes(total)} · ${secs.toFixed(1)} s`);
+    $("zipBtn").disabled = false;
+    buildPlayer(); updateSnippet(); updateBarMeta();
+  }
+
+  function lockInputs(on) {
+    ["fps", "width", "start", "end", "prefix", "startNum"].forEach((id) => $(id).disabled = on);
+    compSlider.disable(on); scrubSlider.disable(on);
+    [presetMenu, fpsMenu, widthMenu].forEach((m) => m.setDisabled(on));
+    $("fileWrap").classList.toggle("is-disabled", on);
+  }
+
+  // ---------- Sequence player ----------
+  const seqSlider = makeSlider($("seqScrub"), { min: 0, max: 0, step: 1, value: 0, onInput: (v) => { stopPlayback(); showSeq(v); } });
+  seqSlider.disable(true);
+  function showSeq(i) {
+    const f = st.frames[i]; if (!f) return;
+    st.seqIdx = i;
+    const stage = $("seqStage");
+    let img = stage.querySelector("img");
+    if (!img) { stage.innerHTML = ""; img = new Image(); img.alt = "Frame hasil"; stage.appendChild(img); }
+    img.src = f.url;
+    $("seqName").textContent = `${f.name} · ${fmtBytes(f.size)}`;
+    if (!st.running) seqSlider.set(i);
+    document.querySelectorAll("#strip button").forEach((b) => b.setAttribute("aria-current", String(+b.dataset.i === i)));
+  }
+  function buildPlayer() {
+    const n = st.frames.length;
+    seqSlider.setMax(n - 1); seqSlider.disable(false); $("playBtn").disabled = false;
+    const strip = $("strip"); strip.innerHTML = "";
+    const k = Math.min(n, 60);
+    for (let j = 0; j < k; j++) {
+      const i = k === 1 ? 0 : Math.round(j * (n - 1) / (k - 1));
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.i = i; b.title = st.frames[i].name;
+      b.innerHTML = `<img alt="" loading="lazy" src="${st.frames[i].url}">`;
+      strip.appendChild(b);
+    }
+    showSeq(0);
+  }
+  $("strip").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { stopPlayback(); showSeq(+b.dataset.i); } });
+  function stopPlayback() { if (st.playing) { cancelAnimationFrame(st.playing); st.playing = null; } $("playBtn").textContent = "Putar"; }
+  $("playBtn").addEventListener("click", () => {
+    if (st.playing) return stopPlayback();
+    $("playBtn").textContent = "Jeda";
+    let last = performance.now(), acc = 0;
+    const step = (now) => {
+      acc += now - last; last = now;
+      const dt = 1000 / st.fps;
+      if (acc >= dt) { acc %= dt; showSeq((st.seqIdx + 1) % st.frames.length); }
+      st.playing = requestAnimationFrame(step);
+    };
+    st.playing = requestAnimationFrame(step);
+  });
+
+  // ---------- Export ----------
+  $("zipBtn").addEventListener("click", async () => {
+    if (!st.frames.length) return;
+    const btn = $("zipBtn"); btn.disabled = true;
+    try {
+      if (!st.zipBlob) {
+        if (typeof JSZip === "undefined") throw new Error("Library ZIP gagal dimuat. Periksa koneksi lalu muat ulang.");
+        const zip = new JSZip();
+        const folder = zip.folder(st.prefix || "frames");
+        st.frames.forEach((f) => folder.file(f.name, f.blob));
+        st.zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE" }, (m) => { btn.textContent = `Membuat ZIP ${Math.round(m.percent)}%`; });
+      }
+      const base = (st.file.name.replace(/\.[^.]+$/, "") || "video").replace(/[^\w\-]+/g, "-");
+      const filename = `${base}_${st.frames.length}f_webp-q${Math.round(quality() * 100)}.zip`;
+      const dl = await dlPromise;
+      if (dl) {
+        try { await dl.save({ filename, data: st.zipBlob }); setStatus(`Tersimpan · ${filename}`); }
+        catch (err) {
+          if (err && err.code === "declined") setStatus("Download dibatalkan");
+          else if (err && err.code === "rate_limited") setStatus("Dialog simpan masih terbuka. Tutup dulu, lalu coba lagi.");
+          else setStatus("Download tidak tersedia di tampilan ini");
+        }
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(st.zipBlob); a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        setStatus(`Mengunduh ${filename}`);
+      }
+    } catch (err) {
+      setStatus(err.message || String(err));
+    } finally {
+      btn.textContent = "Download ZIP"; btn.disabled = false;
+    }
+  });
+
+  $("copyBtn").addEventListener("click", async () => {
+    const ta = $("snippet");
+    try { await navigator.clipboard.writeText(ta.value); $("copyBtn").textContent = "Tersalin"; }
+    catch { ta.focus(); ta.select(); $("copyBtn").textContent = "Teks dipilih · ⌘C"; }
+    setTimeout(() => $("copyBtn").textContent = "Salin kode", 1600);
+  });
+
+  setComp(25); setFps(30); setWidth(1280); setWipe(50); updateSnippet();
+})();
+</script>
+
+</body>
+</html>
